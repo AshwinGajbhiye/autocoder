@@ -17,6 +17,7 @@ import asyncio
 import json
 import os
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -162,6 +163,35 @@ def cleanup_adb_reverse():
         )
     except Exception:
         pass
+
+def get_local_ip():
+    """Get the primary local network IP address."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return 'localhost'
+
+async def monitor_adb_loop():
+    """Periodically check for newly connected ADB devices and configure reverse forwarding."""
+    adb_reversed = False
+    while True:
+        try:
+            ok, info = check_adb()
+            if ok and not adb_reversed:
+                log('📱', f'Android device detected via USB: {info}', Color.GREEN)
+                if setup_adb_reverse():
+                    adb_reversed = True
+                    log('✨', f'ADB reverse active! You can now open http://localhost:{HTTP_PORT} on your phone', Color.GREEN)
+            elif not ok and adb_reversed:
+                adb_reversed = False
+                log('⚠️ ', 'Android device disconnected from ADB.', Color.YELLOW)
+        except Exception:
+            pass
+        await asyncio.sleep(3)
 
 # ─── HTTP Server (serves the phone web app) ──────────────────
 class ReusableHTTPServer(HTTPServer):
@@ -532,10 +562,17 @@ async def main():
     # Start WebSocket server
     ws_server = await start_ws_server()
     
+    # Start ADB device watcher loop
+    asyncio.create_task(monitor_adb_loop())
+    
+    local_ip = get_local_ip()
+    
     print()
     log_header('🚀 Ready!')
-    log('📱', f'Open on your phone:  {Color.BOLD}http://localhost:{HTTP_PORT}{Color.END}', Color.CYAN)
-    log('💡', 'Open Chrome on your phone and go to the URL above', Color.DIM)
+    log('💻', f'Open on Mac:          {Color.BOLD}http://localhost:{HTTP_PORT}{Color.END}', Color.CYAN)
+    log('📱', f'Open on Phone (USB):   {Color.BOLD}http://localhost:{HTTP_PORT}{Color.END} (requires USB Debugging)', Color.CYAN)
+    if local_ip != 'localhost':
+        log('📶', f'Open on Phone (Wi-Fi): {Color.BOLD}http://{local_ip}:{HTTP_PORT}{Color.END} (must be on same Wi-Fi)', Color.GREEN)
     log('🛑', f'Press {Color.BOLD}Ctrl+C{Color.END} to stop', Color.DIM)
     log('🛡️', f'Move mouse to screen corner to emergency-stop typing', Color.DIM)
     print()
