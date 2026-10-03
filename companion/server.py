@@ -22,6 +22,8 @@ import subprocess
 import sys
 import threading
 import time
+import random
+import string
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
@@ -38,6 +40,11 @@ def check_dependencies():
         import pyautogui
     except ImportError:
         missing.append('pyautogui')
+        
+    try:
+        import pyperclip
+    except ImportError:
+        missing.append('pyperclip')
     
     if missing:
         print(f"📦 Installing missing packages: {', '.join(missing)}")
@@ -50,11 +57,15 @@ check_dependencies()
 
 import websockets
 import pyautogui
+import pyperclip
 
 # ─── Configuration ────────────────────────────────────────────
 WS_PORT = 8765
 HTTP_PORT = 8080
-APP_DIR = Path(__file__).parent.parent / 'app'
+if hasattr(sys, '_MEIPASS'):
+    APP_DIR = Path(sys._MEIPASS) / 'app'
+else:
+    APP_DIR = Path(__file__).parent.parent / 'app'
 
 # pyautogui safety settings
 pyautogui.FAILSAFE = True    # Move mouse to corner to abort
@@ -287,7 +298,10 @@ shared_state = {
     'text': '',
     'wpm': 100,
     'focus_delay_sec': 3,
-    'preserve_formatting': True
+    'preserve_formatting': True,
+    'paste_mode': False,
+    'jitter_mode': False,
+    'oops_mode': False
 }
 
 # Track active punching task so we can cancel it
@@ -343,6 +357,12 @@ async def handle_client(websocket):
                     shared_state['focus_delay_sec'] = msg['focus_delay_sec']
                 if 'preserve_formatting' in msg:
                     shared_state['preserve_formatting'] = msg['preserve_formatting']
+                if 'paste_mode' in msg:
+                    shared_state['paste_mode'] = msg['paste_mode']
+                if 'jitter_mode' in msg:
+                    shared_state['jitter_mode'] = msg['jitter_mode']
+                if 'oops_mode' in msg:
+                    shared_state['oops_mode'] = msg['oops_mode']
 
                 log('🔄', f'Code updated ({len(new_text)} chars) from {client_ip}. Syncing to {len(connected_clients)} device(s)', Color.CYAN)
                 
@@ -353,6 +373,9 @@ async def handle_client(websocket):
                     'wpm': shared_state['wpm'],
                     'focus_delay_sec': shared_state['focus_delay_sec'],
                     'preserve_formatting': shared_state['preserve_formatting'],
+                    'paste_mode': shared_state['paste_mode'],
+                    'jitter_mode': shared_state['jitter_mode'],
+                    'oops_mode': shared_state['oops_mode'],
                     'sender': client_ip
                 })
             
@@ -360,6 +383,9 @@ async def handle_client(websocket):
                 text = msg.get('text', '')
                 delay_ms = msg.get('delay_ms', 50)
                 preserve = msg.get('preserve_formatting', True)
+                paste_mode = msg.get('paste_mode', False)
+                jitter_mode = msg.get('jitter_mode', False)
+                oops_mode = msg.get('oops_mode', False)
                 wpm = msg.get('wpm', 100)
                 
                 if not text:
@@ -373,8 +399,18 @@ async def handle_client(websocket):
                 shared_state['text'] = text
                 shared_state['wpm'] = wpm
                 shared_state['preserve_formatting'] = preserve
+                shared_state['paste_mode'] = paste_mode
+                shared_state['jitter_mode'] = jitter_mode
+                shared_state['oops_mode'] = oops_mode
 
-                log('⌨️ ', f'Typing {len(text)} chars at {wpm} WPM ({delay_ms}ms delay)', Color.CYAN)
+                if paste_mode:
+                    log('📋', f'Pasting {len(text)} chars via clipboard', Color.CYAN)
+                else:
+                    modes = []
+                    if jitter_mode: modes.append('JITTER')
+                    if oops_mode: modes.append('OOPS')
+                    modes_str = f" [{'+'.join(modes)}]" if modes else ""
+                    log('⌨️ ', f'Typing {len(text)} chars at {wpm} WPM ({delay_ms}ms base delay){modes_str}', Color.CYAN)
                 
                 should_stop = False
                 
@@ -382,48 +418,100 @@ async def handle_client(websocket):
                     global should_stop
                     try:
                         total = len(text)
-                        for i, char in enumerate(text):
+                        
+                        if paste_mode:
                             if should_stop:
                                 await broadcast({'type': 'stopped'})
-                                log('■', 'Typing stopped by user', Color.YELLOW)
+                                log('■', 'Pasting stopped by user', Color.YELLOW)
                                 return
-                            
-                            # Check if at least one client is still open
-                            if not any(ws_is_open(c) for c in connected_clients):
-                                return
-                            
+                                
                             try:
-                                if char in SPECIAL_KEYS and preserve:
-                                    pyautogui.press(SPECIAL_KEYS[char])
-                                elif char == '\r':
-                                    continue
-                                elif char == '\n' and not preserve:
-                                    pyautogui.typewrite(' ', interval=0)
-                                elif char == '\t' and not preserve:
-                                    pyautogui.typewrite('    ', interval=0)
+                                pyperclip.copy(text)
+                                if sys.platform == 'darwin':
+                                    pyautogui.hotkey('command', 'v')
                                 else:
-                                    pyautogui.write(char)
+                                    pyautogui.hotkey('ctrl', 'v')
+                                    
+                                await broadcast({
+                                    'type': 'progress',
+                                    'current': total,
+                                    'total': total
+                                })
+                                await asyncio.sleep(0.1) # Small buffer
                             except Exception as e:
                                 await broadcast({
                                     'type': 'error',
-                                    'message': f'Typing error at position {i}: {str(e)}'
+                                    'message': f'Paste error: {str(e)}'
                                 })
                                 return
-                            
-                            # Progress update every 5 chars or at the end
-                            if i % 5 == 0 or i == total - 1:
-                                await broadcast({
-                                    'type': 'progress',
-                                    'current': i + 1,
-                                    'total': total
-                                })
-                            
-                            if delay_ms > 0 and i < total - 1:
-                                await asyncio.sleep(delay_ms / 1000.0)
+                        else:
+                            for i, char in enumerate(text):
+                                if should_stop:
+                                    await broadcast({'type': 'stopped'})
+                                    log('■', 'Typing stopped by user', Color.YELLOW)
+                                    return
+                                
+                                # Check if at least one client is still open
+                                if not any(ws_is_open(c) for c in connected_clients):
+                                    return
+                                
+                                try:
+                                    if char in SPECIAL_KEYS and preserve:
+                                        pyautogui.press(SPECIAL_KEYS[char])
+                                    elif char == '\r':
+                                        continue
+                                    elif char == '\n' and not preserve:
+                                        pyautogui.typewrite(' ', interval=0)
+                                    elif char == '\t' and not preserve:
+                                        pyautogui.typewrite('    ', interval=0)
+                                    else:
+                                        if oops_mode and char.isalpha() and random.random() < 0.03:
+                                            wrong_char = random.choice(string.ascii_lowercase)
+                                            if wrong_char == char.lower():
+                                                wrong_char = 'x' if char.lower() != 'x' else 'z'
+                                            
+                                            # Type wrong char
+                                            pyautogui.write(wrong_char)
+                                            # "Realize" mistake
+                                            await asyncio.sleep(random.uniform(0.1, 0.2))
+                                            # Backspace
+                                            pyautogui.press('backspace')
+                                            # Log it
+                                            print(f"🙈 Oops! Made a typo on '{char}', fixed it.")
+                                            # Tiny pause before resuming
+                                            await asyncio.sleep(random.uniform(0.05, 0.15))
+                                            
+                                        pyautogui.write(char)
+                                except Exception as e:
+                                    await broadcast({
+                                        'type': 'error',
+                                        'message': f'Typing error at position {i}: {str(e)}'
+                                    })
+                                    return
+                                
+                                # Progress update every 5 chars or at the end
+                                if i % 5 == 0 or i == total - 1:
+                                    await broadcast({
+                                        'type': 'progress',
+                                        'current': i + 1,
+                                        'total': total
+                                    })
+                                
+                                if delay_ms > 0 and i < total - 1:
+                                    if jitter_mode:
+                                        # Random variation (Gaussian) around the char_delay
+                                        # Standard deviation is 40% of the delay for human-like fluctuation
+                                        jittered_ms = random.gauss(delay_ms, delay_ms * 0.4)
+                                        # Ensure delay doesn't go below 1ms
+                                        actual_delay = max(1.0, jittered_ms) / 1000.0
+                                    else:
+                                        actual_delay = delay_ms / 1000.0
+                                        
+                                    await asyncio.sleep(actual_delay)
                         
                         # Done!
                         await broadcast({'type': 'complete'})
-                        log('✅', 'Typing complete!', Color.GREEN)
+                        log('✅', 'Typing complete!' if not paste_mode else 'Paste complete!', Color.GREEN)
                     
                     except asyncio.CancelledError:
                         log('■', 'Typing cancelled', Color.YELLOW)
@@ -494,6 +582,13 @@ def run_tests():
         log('  ✓', f'pyautogui {pyautogui.__version__}', Color.GREEN)
     except Exception as e:
         log('  ✕', f'pyautogui: {e}', Color.RED)
+        all_ok = False
+
+    try:
+        import pyperclip
+        log('  ✓', f'pyperclip {pyperclip.__version__}', Color.GREEN)
+    except Exception as e:
+        log('  ✕', f'pyperclip: {e}', Color.RED)
         all_ok = False
     
     # Test 2: ADB

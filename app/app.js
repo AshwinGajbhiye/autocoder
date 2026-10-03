@@ -38,6 +38,9 @@
         delayPlus: $('delay-plus'),
         estimate: $('estimate'),
         preserveFormatting: $('preserve-formatting'),
+        pasteMode: $('paste-mode'),
+        jitterMode: $('jitter-mode'),
+        oopsMode: $('oops-mode'),
         progressSection: $('progress-section'),
         progressLabel: $('progress-label'),
         progressPercent: $('progress-percent'),
@@ -144,6 +147,15 @@
             if (saved.preserveFormatting !== undefined) {
                 elements.preserveFormatting.checked = saved.preserveFormatting;
             }
+            if (saved.pasteMode !== undefined) {
+                elements.pasteMode.checked = saved.pasteMode;
+            }
+            if (saved.jitterMode !== undefined) {
+                elements.jitterMode.checked = saved.jitterMode;
+            }
+            if (saved.oopsMode !== undefined) {
+                elements.oopsMode.checked = saved.oopsMode;
+            }
         } catch (e) { /* ignore */ }
     }
 
@@ -153,6 +165,9 @@
                 wpm: getSpeed(),
                 focusDelay: getDelay(),
                 preserveFormatting: elements.preserveFormatting.checked,
+                pasteMode: elements.pasteMode.checked,
+                jitterMode: elements.jitterMode ? elements.jitterMode.checked : false,
+                oopsMode: elements.oopsMode ? elements.oopsMode.checked : false,
             }));
         } catch (e) { /* ignore */ }
     }
@@ -318,6 +333,15 @@
                     if (msg.state.preserve_formatting !== undefined) {
                         elements.preserveFormatting.checked = msg.state.preserve_formatting;
                     }
+                    if (msg.state.paste_mode !== undefined) {
+                        elements.pasteMode.checked = msg.state.paste_mode;
+                    }
+                    if (msg.state.jitter_mode !== undefined && elements.jitterMode) {
+                        elements.jitterMode.checked = msg.state.jitter_mode;
+                    }
+                    if (msg.state.oops_mode !== undefined && elements.oopsMode) {
+                        elements.oopsMode.checked = msg.state.oops_mode;
+                    }
                 }
                 break;
 
@@ -339,6 +363,15 @@
                 }
                 if (msg.preserve_formatting !== undefined) {
                     elements.preserveFormatting.checked = msg.preserve_formatting;
+                }
+                if (msg.paste_mode !== undefined) {
+                    elements.pasteMode.checked = msg.paste_mode;
+                }
+                if (msg.jitter_mode !== undefined && elements.jitterMode) {
+                    elements.jitterMode.checked = msg.jitter_mode;
+                }
+                if (msg.oops_mode !== undefined && elements.oopsMode) {
+                    elements.oopsMode.checked = msg.oops_mode;
                 }
                 break;
 
@@ -389,6 +422,9 @@
         const wpm = getSpeed();
         const delaySec = getDelay();
         const preserve = elements.preserveFormatting.checked;
+        const paste = elements.pasteMode.checked;
+        const jitter = elements.jitterMode ? elements.jitterMode.checked : false;
+        const burst = elements.oopsMode ? elements.oopsMode.checked : false;
 
         if (!isConnected) {
             showToast('!', 'Not connected to laptop companion', 'error');
@@ -400,7 +436,10 @@
             text: text,
             wpm: wpm,
             focus_delay_sec: delaySec,
-            preserve_formatting: preserve
+            preserve_formatting: preserve,
+            paste_mode: paste,
+            jitter_mode: jitter,
+            oops_mode: burst
         });
 
         if (sent) {
@@ -442,6 +481,9 @@
             text: text,
             delay_ms: delayMs,
             preserve_formatting: elements.preserveFormatting.checked,
+            paste_mode: elements.pasteMode.checked,
+            jitter_mode: elements.jitterMode ? elements.jitterMode.checked : false,
+            oops_mode: elements.oopsMode ? elements.oopsMode.checked : false,
             wpm: wpm,
         });
 
@@ -573,11 +615,19 @@
             elements.estimate.textContent = '';
             return;
         }
+        if (elements.pasteMode && elements.pasteMode.checked) {
+            elements.estimate.textContent = 'Estimated time: Instant (Clipboard)';
+            return;
+        }
         const wpm = getSpeed();
         const delayMs = wpmToDelay(wpm);
         const totalMs = text.length * delayMs;
         const seconds = totalMs / 1000;
-        elements.estimate.textContent = `Estimated time: ${formatTime(seconds)}`;
+        let estText = `Estimated time: ${formatTime(seconds)}`;
+        if ((elements.jitterMode && elements.jitterMode.checked) || (elements.oopsMode && elements.oopsMode.checked)) {
+            estText += ' (Approx, Jitter/Oops on)';
+        }
+        elements.estimate.textContent = estText;
     }
 
     // ─── Countdown ───────────────────────────────────────────
@@ -689,6 +739,24 @@
 
         // Settings toggles
         elements.preserveFormatting.addEventListener('change', saveSettings);
+        if (elements.pasteMode) {
+            elements.pasteMode.addEventListener('change', () => {
+                saveSettings();
+                updateEstimate();
+            });
+        }
+        if (elements.jitterMode) {
+            elements.jitterMode.addEventListener('change', () => {
+                saveSettings();
+                updateEstimate();
+            });
+        }
+        if (elements.oopsMode) {
+            elements.oopsMode.addEventListener('change', () => {
+                saveSettings();
+                updateEstimate();
+            });
+        }
 
         // Update button (sync code across devices)
         elements.updateBtn.addEventListener('click', sendUpdateCode);
