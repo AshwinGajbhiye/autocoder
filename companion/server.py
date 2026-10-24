@@ -437,10 +437,20 @@ async def handle_client(websocket):
                                     if char in SPECIAL_KEYS and preserve:
                                         pyautogui.press(SPECIAL_KEYS[char])
                                         
-                                        # AUTO-INDENT: After Enter, instantly type all
-                                        # leading whitespace (mimics IDE auto-indent).
-                                        # Humans never type spaces one-by-one to indent.
+                                        # AUTO-INDENT FIX: After pressing Enter, the
+                                        # IDE may auto-indent. We clear whatever the
+                                        # IDE added, then type the EXACT indentation
+                                        # from the source code instantly.
                                         if char in ('\n', '\r'):
+                                            # Brief pause so IDE processes auto-indent
+                                            await asyncio.sleep(0.05)
+                                            # Select & delete any IDE auto-indent:
+                                            # Home -> col 0, Shift+End -> select all
+                                            pyautogui.press('home')
+                                            pyautogui.hotkey('shift', 'end')
+                                            pyautogui.press('delete')
+                                            
+                                            # Now type correct whitespace from source
                                             indent_start = i + 1
                                             indent_end = indent_start
                                             while indent_end < total and text[indent_end] in (' ', '\t'):
