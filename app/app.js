@@ -38,6 +38,7 @@
         delayPlus: $('delay-plus'),
         estimate: $('estimate'),
         preserveFormatting: $('preserve-formatting'),
+        smartIndent: $('smart-indent'),
         pasteMode: $('paste-mode'),
         jitterMode: $('jitter-mode'),
         oopsMode: $('oops-mode'),
@@ -147,6 +148,9 @@
             if (saved.preserveFormatting !== undefined) {
                 elements.preserveFormatting.checked = saved.preserveFormatting;
             }
+            if (saved.smartIndent !== undefined && elements.smartIndent) {
+                elements.smartIndent.checked = saved.smartIndent;
+            }
             if (saved.pasteMode !== undefined) {
                 elements.pasteMode.checked = saved.pasteMode;
             }
@@ -165,6 +169,7 @@
                 wpm: getSpeed(),
                 focusDelay: getDelay(),
                 preserveFormatting: elements.preserveFormatting.checked,
+                smartIndent: elements.smartIndent ? elements.smartIndent.checked : true,
                 pasteMode: elements.pasteMode.checked,
                 jitterMode: elements.jitterMode ? elements.jitterMode.checked : false,
                 oopsMode: elements.oopsMode ? elements.oopsMode.checked : false,
@@ -333,6 +338,9 @@
                     if (msg.state.preserve_formatting !== undefined) {
                         elements.preserveFormatting.checked = msg.state.preserve_formatting;
                     }
+                    if (msg.state.smart_indent !== undefined && elements.smartIndent) {
+                        elements.smartIndent.checked = msg.state.smart_indent;
+                    }
                     if (msg.state.paste_mode !== undefined) {
                         elements.pasteMode.checked = msg.state.paste_mode;
                     }
@@ -363,6 +371,9 @@
                 }
                 if (msg.preserve_formatting !== undefined) {
                     elements.preserveFormatting.checked = msg.preserve_formatting;
+                }
+                if (msg.smart_indent !== undefined && elements.smartIndent) {
+                    elements.smartIndent.checked = msg.smart_indent;
                 }
                 if (msg.paste_mode !== undefined) {
                     elements.pasteMode.checked = msg.paste_mode;
@@ -422,6 +433,7 @@
         const wpm = getSpeed();
         const delaySec = getDelay();
         const preserve = elements.preserveFormatting.checked;
+        const smart = elements.smartIndent ? elements.smartIndent.checked : true;
         const paste = elements.pasteMode.checked;
         const jitter = elements.jitterMode ? elements.jitterMode.checked : false;
         const burst = elements.oopsMode ? elements.oopsMode.checked : false;
@@ -437,6 +449,7 @@
             wpm: wpm,
             focus_delay_sec: delaySec,
             preserve_formatting: preserve,
+            smart_indent: smart,
             paste_mode: paste,
             jitter_mode: jitter,
             oops_mode: burst
@@ -481,6 +494,7 @@
             text: text,
             delay_ms: delayMs,
             preserve_formatting: elements.preserveFormatting.checked,
+            smart_indent: elements.smartIndent ? elements.smartIndent.checked : true,
             paste_mode: elements.pasteMode.checked,
             jitter_mode: elements.jitterMode ? elements.jitterMode.checked : false,
             oops_mode: elements.oopsMode ? elements.oopsMode.checked : false,
@@ -739,6 +753,9 @@
 
         // Settings toggles
         elements.preserveFormatting.addEventListener('change', saveSettings);
+        if (elements.smartIndent) {
+            elements.smartIndent.addEventListener('change', saveSettings);
+        }
         if (elements.pasteMode) {
             elements.pasteMode.addEventListener('change', () => {
                 saveSettings();

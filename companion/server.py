@@ -269,6 +269,7 @@ shared_state = {
     'wpm': 100,
     'focus_delay_sec': 3,
     'preserve_formatting': True,
+    'smart_indent': True,
     'paste_mode': False,
     'jitter_mode': False,
     'oops_mode': False
@@ -327,6 +328,8 @@ async def handle_client(websocket):
                     shared_state['focus_delay_sec'] = msg['focus_delay_sec']
                 if 'preserve_formatting' in msg:
                     shared_state['preserve_formatting'] = msg['preserve_formatting']
+                if 'smart_indent' in msg:
+                    shared_state['smart_indent'] = msg['smart_indent']
                 if 'paste_mode' in msg:
                     shared_state['paste_mode'] = msg['paste_mode']
                 if 'jitter_mode' in msg:
@@ -343,6 +346,7 @@ async def handle_client(websocket):
                     'wpm': shared_state['wpm'],
                     'focus_delay_sec': shared_state['focus_delay_sec'],
                     'preserve_formatting': shared_state['preserve_formatting'],
+                    'smart_indent': shared_state['smart_indent'],
                     'paste_mode': shared_state['paste_mode'],
                     'jitter_mode': shared_state['jitter_mode'],
                     'oops_mode': shared_state['oops_mode'],
@@ -353,6 +357,7 @@ async def handle_client(websocket):
                 text = msg.get('text', '')
                 delay_ms = msg.get('delay_ms', 50)
                 preserve = msg.get('preserve_formatting', True)
+                smart_indent = msg.get('smart_indent', True)
                 paste_mode = msg.get('paste_mode', False)
                 jitter_mode = msg.get('jitter_mode', False)
                 oops_mode = msg.get('oops_mode', False)
@@ -369,6 +374,7 @@ async def handle_client(websocket):
                 shared_state['text'] = text
                 shared_state['wpm'] = wpm
                 shared_state['preserve_formatting'] = preserve
+                shared_state['smart_indent'] = smart_indent
                 shared_state['paste_mode'] = paste_mode
                 shared_state['jitter_mode'] = jitter_mode
                 shared_state['oops_mode'] = oops_mode
@@ -377,6 +383,7 @@ async def handle_client(websocket):
                     log('📋', f'Pasting {len(text)} chars via clipboard', Color.CYAN)
                 else:
                     modes = []
+                    if smart_indent: modes.append('SMART_INDENT')
                     if jitter_mode: modes.append('JITTER')
                     if oops_mode: modes.append('OOPS')
                     modes_str = f" [{'+'.join(modes)}]" if modes else ""
@@ -414,61 +421,135 @@ async def handle_client(websocket):
                                     'message': f'Paste error: {str(e)}'
                                 })
                                 return
+                        elif smart_indent and preserve:
+                            lines = text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
+                            cur_ide_indent = 0
+                            tab_size = 4
+                            typed_chars = 0
+                            
+                            for line_idx, line in enumerate(lines):
+                                if should_stop:
+                                    await broadcast({'type': 'stopped'})
+                                    log('■', 'Typing stopped by user', Color.YELLOW)
+                                    return
+                                
+                                if not any(ws_is_open(c) for c in connected_clients):
+                                    return
+                                
+                                stripped_line = line.lstrip(' \t')
+                                leading_ws = line[:len(line) - len(stripped_line)]
+                                target_indent = 0
+                                for ch in leading_ws:
+                                    if ch == '\t':
+                                        target_indent += tab_size
+                                    else:
+                                        target_indent += 1
+                                
+                                if line_idx == 0:
+                                    if leading_ws:
+                                        for ws_char in leading_ws:
+                                            if ws_char == '\t':
+                                                pyautogui.press('tab')
+                                            else:
+                                                pyautogui.write(ws_char)
+                                        cur_ide_indent = target_indent
+                                        typed_chars += len(leading_ws)
+                                else:
+                                    pyautogui.press('enter')
+                                    typed_chars += 1
+                                    
+                                    # Brief pause for IDE auto-indent calculation
+                                    await asyncio.sleep(0.04)
+                                    
+                                    prev_line = lines[line_idx - 1]
+                                    clean_prev = prev_line.split('#')[0].split('//')[0].rstrip()
+                                    if clean_prev.endswith(':') or clean_prev.endswith('{'):
+                                        cur_ide_indent += tab_size
+                                    
+                                    if stripped_line:
+                                        if target_indent < cur_ide_indent:
+                                            dedents = (cur_ide_indent - target_indent) // tab_size
+                                            rem_spaces = (cur_ide_indent - target_indent) % tab_size
+                                            for _ in range(dedents):
+                                                await asyncio.sleep(random.uniform(0.04, 0.08) if jitter_mode else 0.04)
+                                                pyautogui.press('backspace')
+                                            for _ in range(rem_spaces):
+                                                await asyncio.sleep(0.02)
+                                                pyautogui.press('backspace')
+                                            cur_ide_indent = target_indent
+                                        elif target_indent > cur_ide_indent:
+                                            extra = target_indent - cur_ide_indent
+                                            for _ in range(extra):
+                                                pyautogui.write(' ')
+                                            cur_ide_indent = target_indent
+                                        else:
+                                            # Matches IDE auto-indent perfectly! 0 spaces needed
+                                            pass
+                                    
+                                    typed_chars += len(leading_ws)
+                                    await broadcast({
+                                        'type': 'progress',
+                                        'current': min(total, typed_chars),
+                                        'total': total
+                                    })
+                                
+                                for ch in stripped_line:
+                                    if should_stop:
+                                        await broadcast({'type': 'stopped'})
+                                        log('■', 'Typing stopped by user', Color.YELLOW)
+                                        return
+                                    
+                                    if not any(ws_is_open(c) for c in connected_clients):
+                                        return
+                                    
+                                    try:
+                                        if oops_mode and ch.isalpha() and random.random() < 0.03:
+                                            wrong_char = random.choice(string.ascii_lowercase)
+                                            if wrong_char == ch.lower():
+                                                wrong_char = 'x' if ch.lower() != 'x' else 'z'
+                                            
+                                            pyautogui.write(wrong_char)
+                                            await asyncio.sleep(random.uniform(0.1, 0.2))
+                                            pyautogui.press('backspace')
+                                            print(f"🙈 Oops! Made a typo on '{ch}', fixed it.")
+                                            await asyncio.sleep(random.uniform(0.05, 0.15))
+                                        
+                                        pyautogui.write(ch)
+                                    except Exception as e:
+                                        await broadcast({
+                                            'type': 'error',
+                                            'message': f'Typing error: {str(e)}'
+                                        })
+                                        return
+                                    
+                                    typed_chars += 1
+                                    if typed_chars % 5 == 0 or typed_chars == total:
+                                        await broadcast({
+                                            'type': 'progress',
+                                            'current': min(total, typed_chars),
+                                            'total': total
+                                        })
+                                    
+                                    if delay_ms > 0:
+                                        if jitter_mode:
+                                            jittered_ms = random.gauss(delay_ms, delay_ms * 0.4)
+                                            actual_delay = max(1.0, jittered_ms) / 1000.0
+                                        else:
+                                            actual_delay = delay_ms / 1000.0
+                                        await asyncio.sleep(actual_delay)
                         else:
-                            # Track position to skip auto-indent chars
-                            skip_until = -1
-
                             for i, char in enumerate(text):
                                 if should_stop:
                                     await broadcast({'type': 'stopped'})
                                     log('■', 'Typing stopped by user', Color.YELLOW)
                                     return
                                 
-                                # Skip chars already typed as auto-indent
-                                if i < skip_until:
-                                    continue
-                                skip_until = -1
-
-                                # Check if at least one client is still open
                                 if not any(ws_is_open(c) for c in connected_clients):
                                     return
                                 
                                 try:
                                     if char in SPECIAL_KEYS and preserve:
                                         pyautogui.press(SPECIAL_KEYS[char])
-                                        
-                                        # AUTO-INDENT FIX: After pressing Enter, the
-                                        # IDE may auto-indent. We clear whatever the
-                                        # IDE added, then type the EXACT indentation
-                                        # from the source code instantly.
-                                        if char in ('\n', '\r'):
-                                            # Brief pause so IDE processes auto-indent
-                                            await asyncio.sleep(0.05)
-                                            # Select & delete any IDE auto-indent:
-                                            # Home -> col 0, Shift+End -> select all
-                                            pyautogui.press('home')
-                                            pyautogui.hotkey('shift', 'end')
-                                            pyautogui.press('delete')
-                                            
-                                            # Now type correct whitespace from source
-                                            indent_start = i + 1
-                                            indent_end = indent_start
-                                            while indent_end < total and text[indent_end] in (' ', '\t'):
-                                                indent_end += 1
-                                            if indent_end > indent_start:
-                                                indent_str = text[indent_start:indent_end]
-                                                for ws_char in indent_str:
-                                                    if ws_char == '\t':
-                                                        pyautogui.press('tab')
-                                                    else:
-                                                        pyautogui.write(ws_char)
-                                                skip_until = indent_end
-                                                await broadcast({
-                                                    'type': 'progress',
-                                                    'current': indent_end,
-                                                    'total': total
-                                                })
-
                                     elif char == '\r':
                                         continue
                                     elif char == '\n' and not preserve:
@@ -481,15 +562,10 @@ async def handle_client(websocket):
                                             if wrong_char == char.lower():
                                                 wrong_char = 'x' if char.lower() != 'x' else 'z'
                                             
-                                            # Type wrong char
                                             pyautogui.write(wrong_char)
-                                            # "Realize" mistake
                                             await asyncio.sleep(random.uniform(0.1, 0.2))
-                                            # Backspace
                                             pyautogui.press('backspace')
-                                            # Log it
                                             print(f"🙈 Oops! Made a typo on '{char}', fixed it.")
-                                            # Tiny pause before resuming
                                             await asyncio.sleep(random.uniform(0.05, 0.15))
                                             
                                         pyautogui.write(char)
@@ -500,7 +576,6 @@ async def handle_client(websocket):
                                     })
                                     return
                                 
-                                # Progress update every 5 chars or at the end
                                 if i % 5 == 0 or i == total - 1:
                                     await broadcast({
                                         'type': 'progress',
@@ -510,10 +585,7 @@ async def handle_client(websocket):
                                 
                                 if delay_ms > 0 and i < total - 1:
                                     if jitter_mode:
-                                        # Random variation (Gaussian) around the char_delay
-                                        # Standard deviation is 40% of the delay for human-like fluctuation
                                         jittered_ms = random.gauss(delay_ms, delay_ms * 0.4)
-                                        # Ensure delay doesn't go below 1ms
                                         actual_delay = max(1.0, jittered_ms) / 1000.0
                                     else:
                                         actual_delay = delay_ms / 1000.0
