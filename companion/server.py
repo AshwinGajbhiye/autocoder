@@ -415,12 +415,20 @@ async def handle_client(websocket):
                                 })
                                 return
                         else:
+                            # Track position to skip auto-indent chars
+                            skip_until = -1
+
                             for i, char in enumerate(text):
                                 if should_stop:
                                     await broadcast({'type': 'stopped'})
                                     log('■', 'Typing stopped by user', Color.YELLOW)
                                     return
                                 
+                                # Skip chars already typed as auto-indent
+                                if i < skip_until:
+                                    continue
+                                skip_until = -1
+
                                 # Check if at least one client is still open
                                 if not any(ws_is_open(c) for c in connected_clients):
                                     return
@@ -428,6 +436,29 @@ async def handle_client(websocket):
                                 try:
                                     if char in SPECIAL_KEYS and preserve:
                                         pyautogui.press(SPECIAL_KEYS[char])
+                                        
+                                        # AUTO-INDENT: After Enter, instantly type all
+                                        # leading whitespace (mimics IDE auto-indent).
+                                        # Humans never type spaces one-by-one to indent.
+                                        if char in ('\n', '\r'):
+                                            indent_start = i + 1
+                                            indent_end = indent_start
+                                            while indent_end < total and text[indent_end] in (' ', '\t'):
+                                                indent_end += 1
+                                            if indent_end > indent_start:
+                                                indent_str = text[indent_start:indent_end]
+                                                for ws_char in indent_str:
+                                                    if ws_char == '\t':
+                                                        pyautogui.press('tab')
+                                                    else:
+                                                        pyautogui.write(ws_char)
+                                                skip_until = indent_end
+                                                await broadcast({
+                                                    'type': 'progress',
+                                                    'current': indent_end,
+                                                    'total': total
+                                                })
+
                                     elif char == '\r':
                                         continue
                                     elif char == '\n' and not preserve:
