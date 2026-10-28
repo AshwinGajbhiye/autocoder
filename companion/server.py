@@ -22,6 +22,8 @@ import subprocess
 import sys
 import threading
 import time
+import random
+import string
 from http.server import HTTPServer, SimpleHTTPRequestHandler
 from pathlib import Path
 
@@ -38,6 +40,11 @@ def check_dependencies():
         import pyautogui
     except ImportError:
         missing.append('pyautogui')
+        
+    try:
+        import pyperclip
+    except ImportError:
+        missing.append('pyperclip')
     
     if missing:
         print(f"📦 Installing missing packages: {', '.join(missing)}")
@@ -50,11 +57,15 @@ check_dependencies()
 
 import websockets
 import pyautogui
+import pyperclip
 
 # ─── Configuration ────────────────────────────────────────────
 WS_PORT = 8765
 HTTP_PORT = 8080
-APP_DIR = Path(__file__).parent.parent / 'app'
+if hasattr(sys, '_MEIPASS'):
+    APP_DIR = Path(sys._MEIPASS) / 'app'
+else:
+    APP_DIR = Path(__file__).parent.parent / 'app'
 
 # pyautogui safety settings
 pyautogui.FAILSAFE = True    # Move mouse to corner to abort
@@ -287,7 +298,11 @@ shared_state = {
     'text': '',
     'wpm': 100,
     'focus_delay_sec': 3,
-    'preserve_formatting': True
+    'preserve_formatting': True,
+    'smart_indent': True,
+    'paste_mode': False,
+    'jitter_mode': False,
+    'oops_mode': False
 }
 
 # Track active punching task so we can cancel it
@@ -343,6 +358,14 @@ async def handle_client(websocket):
                     shared_state['focus_delay_sec'] = msg['focus_delay_sec']
                 if 'preserve_formatting' in msg:
                     shared_state['preserve_formatting'] = msg['preserve_formatting']
+                if 'smart_indent' in msg:
+                    shared_state['smart_indent'] = msg['smart_indent']
+                if 'paste_mode' in msg:
+                    shared_state['paste_mode'] = msg['paste_mode']
+                if 'jitter_mode' in msg:
+                    shared_state['jitter_mode'] = msg['jitter_mode']
+                if 'oops_mode' in msg:
+                    shared_state['oops_mode'] = msg['oops_mode']
 
                 log('🔄', f'Code updated ({len(new_text)} chars) from {client_ip}. Syncing to {len(connected_clients)} device(s)', Color.CYAN)
                 
@@ -353,6 +376,10 @@ async def handle_client(websocket):
                     'wpm': shared_state['wpm'],
                     'focus_delay_sec': shared_state['focus_delay_sec'],
                     'preserve_formatting': shared_state['preserve_formatting'],
+                    'smart_indent': shared_state['smart_indent'],
+                    'paste_mode': shared_state['paste_mode'],
+                    'jitter_mode': shared_state['jitter_mode'],
+                    'oops_mode': shared_state['oops_mode'],
                     'sender': client_ip
                 })
             
@@ -360,6 +387,10 @@ async def handle_client(websocket):
                 text = msg.get('text', '')
                 delay_ms = msg.get('delay_ms', 50)
                 preserve = msg.get('preserve_formatting', True)
+                smart_indent = msg.get('smart_indent', True)
+                paste_mode = msg.get('paste_mode', False)
+                jitter_mode = msg.get('jitter_mode', False)
+                oops_mode = msg.get('oops_mode', False)
                 wpm = msg.get('wpm', 100)
                 
                 if not text:
@@ -373,8 +404,20 @@ async def handle_client(websocket):
                 shared_state['text'] = text
                 shared_state['wpm'] = wpm
                 shared_state['preserve_formatting'] = preserve
+                shared_state['smart_indent'] = smart_indent
+                shared_state['paste_mode'] = paste_mode
+                shared_state['jitter_mode'] = jitter_mode
+                shared_state['oops_mode'] = oops_mode
 
-                log('⌨️ ', f'Typing {len(text)} chars at {wpm} WPM ({delay_ms}ms delay)', Color.CYAN)
+                if paste_mode:
+                    log('📋', f'Pasting {len(text)} chars via clipboard', Color.CYAN)
+                else:
+                    modes = []
+                    if smart_indent: modes.append('SMART_INDENT')
+                    if jitter_mode: modes.append('JITTER')
+                    if oops_mode: modes.append('OOPS')
+                    modes_str = f" [{'+'.join(modes)}]" if modes else ""
+                    log('⌨️ ', f'Typing {len(text)} chars at {wpm} WPM ({delay_ms}ms base delay){modes_str}', Color.CYAN)
                 
                 should_stop = False
                 
@@ -382,48 +425,206 @@ async def handle_client(websocket):
                     global should_stop
                     try:
                         total = len(text)
-                        for i, char in enumerate(text):
+                        
+                        if paste_mode:
                             if should_stop:
                                 await broadcast({'type': 'stopped'})
-                                log('■', 'Typing stopped by user', Color.YELLOW)
+                                log('■', 'Pasting stopped by user', Color.YELLOW)
                                 return
-                            
-                            # Check if at least one client is still open
-                            if not any(ws_is_open(c) for c in connected_clients):
-                                return
-                            
+                                
                             try:
-                                if char in SPECIAL_KEYS and preserve:
-                                    pyautogui.press(SPECIAL_KEYS[char])
-                                elif char == '\r':
-                                    continue
-                                elif char == '\n' and not preserve:
-                                    pyautogui.typewrite(' ', interval=0)
-                                elif char == '\t' and not preserve:
-                                    pyautogui.typewrite('    ', interval=0)
+                                pyperclip.copy(text)
+                                if sys.platform == 'darwin':
+                                    pyautogui.hotkey('command', 'v')
                                 else:
-                                    pyautogui.write(char)
+                                    pyautogui.hotkey('ctrl', 'v')
+                                    
+                                await broadcast({
+                                    'type': 'progress',
+                                    'current': total,
+                                    'total': total
+                                })
+                                await asyncio.sleep(0.1) # Small buffer
                             except Exception as e:
                                 await broadcast({
                                     'type': 'error',
-                                    'message': f'Typing error at position {i}: {str(e)}'
+                                    'message': f'Paste error: {str(e)}'
                                 })
                                 return
+                        elif smart_indent and preserve:
+                            lines = text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
+                            cur_ide_indent = 0
+                            tab_size = 4
+                            typed_chars = 0
                             
-                            # Progress update every 5 chars or at the end
-                            if i % 5 == 0 or i == total - 1:
-                                await broadcast({
-                                    'type': 'progress',
-                                    'current': i + 1,
-                                    'total': total
-                                })
-                            
-                            if delay_ms > 0 and i < total - 1:
-                                await asyncio.sleep(delay_ms / 1000.0)
+                            for line_idx, line in enumerate(lines):
+                                if should_stop:
+                                    await broadcast({'type': 'stopped'})
+                                    log('■', 'Typing stopped by user', Color.YELLOW)
+                                    return
+                                
+                                if not any(ws_is_open(c) for c in connected_clients):
+                                    return
+                                
+                                stripped_line = line.lstrip(' \t')
+                                leading_ws = line[:len(line) - len(stripped_line)]
+                                target_indent = 0
+                                for ch in leading_ws:
+                                    if ch == '\t':
+                                        target_indent += tab_size
+                                    else:
+                                        target_indent += 1
+                                
+                                if line_idx == 0:
+                                    if leading_ws:
+                                        for ws_char in leading_ws:
+                                            if ws_char == '\t':
+                                                pyautogui.press('tab')
+                                            else:
+                                                pyautogui.write(ws_char)
+                                        cur_ide_indent = target_indent
+                                        typed_chars += len(leading_ws)
+                                else:
+                                    pyautogui.press('enter')
+                                    typed_chars += 1
+                                    
+                                    # Brief pause for IDE auto-indent calculation
+                                    await asyncio.sleep(0.04)
+                                    
+                                    prev_line = lines[line_idx - 1]
+                                    clean_prev = prev_line.split('#')[0].split('//')[0].rstrip()
+                                    if clean_prev.endswith(':') or clean_prev.endswith('{'):
+                                        cur_ide_indent += tab_size
+                                    
+                                    if stripped_line:
+                                        if target_indent < cur_ide_indent:
+                                            dedents = (cur_ide_indent - target_indent) // tab_size
+                                            rem_spaces = (cur_ide_indent - target_indent) % tab_size
+                                            for _ in range(dedents):
+                                                await asyncio.sleep(random.uniform(0.04, 0.08) if jitter_mode else 0.04)
+                                                pyautogui.press('backspace')
+                                            for _ in range(rem_spaces):
+                                                await asyncio.sleep(0.02)
+                                                pyautogui.press('backspace')
+                                            cur_ide_indent = target_indent
+                                        elif target_indent > cur_ide_indent:
+                                            extra = target_indent - cur_ide_indent
+                                            for _ in range(extra):
+                                                pyautogui.write(' ')
+                                            cur_ide_indent = target_indent
+                                        else:
+                                            # Matches IDE auto-indent perfectly! 0 spaces needed
+                                            pass
+                                    
+                                    typed_chars += len(leading_ws)
+                                    await broadcast({
+                                        'type': 'progress',
+                                        'current': min(total, typed_chars),
+                                        'total': total
+                                    })
+                                
+                                for ch in stripped_line:
+                                    if should_stop:
+                                        await broadcast({'type': 'stopped'})
+                                        log('■', 'Typing stopped by user', Color.YELLOW)
+                                        return
+                                    
+                                    if not any(ws_is_open(c) for c in connected_clients):
+                                        return
+                                    
+                                    try:
+                                        if oops_mode and ch.isalpha() and random.random() < 0.03:
+                                            wrong_char = random.choice(string.ascii_lowercase)
+                                            if wrong_char == ch.lower():
+                                                wrong_char = 'x' if ch.lower() != 'x' else 'z'
+                                            
+                                            pyautogui.write(wrong_char)
+                                            await asyncio.sleep(random.uniform(0.1, 0.2))
+                                            pyautogui.press('backspace')
+                                            print(f"🙈 Oops! Made a typo on '{ch}', fixed it.")
+                                            await asyncio.sleep(random.uniform(0.05, 0.15))
+                                        
+                                        pyautogui.write(ch)
+                                    except Exception as e:
+                                        await broadcast({
+                                            'type': 'error',
+                                            'message': f'Typing error: {str(e)}'
+                                        })
+                                        return
+                                    
+                                    typed_chars += 1
+                                    if typed_chars % 5 == 0 or typed_chars == total:
+                                        await broadcast({
+                                            'type': 'progress',
+                                            'current': min(total, typed_chars),
+                                            'total': total
+                                        })
+                                    
+                                    if delay_ms > 0:
+                                        if jitter_mode:
+                                            jittered_ms = random.gauss(delay_ms, delay_ms * 0.4)
+                                            actual_delay = max(1.0, jittered_ms) / 1000.0
+                                        else:
+                                            actual_delay = delay_ms / 1000.0
+                                        await asyncio.sleep(actual_delay)
+                        else:
+                            for i, char in enumerate(text):
+                                if should_stop:
+                                    await broadcast({'type': 'stopped'})
+                                    log('■', 'Typing stopped by user', Color.YELLOW)
+                                    return
+                                
+                                if not any(ws_is_open(c) for c in connected_clients):
+                                    return
+                                
+                                try:
+                                    if char in SPECIAL_KEYS and preserve:
+                                        pyautogui.press(SPECIAL_KEYS[char])
+                                    elif char == '\r':
+                                        continue
+                                    elif char == '\n' and not preserve:
+                                        pyautogui.typewrite(' ', interval=0)
+                                    elif char == '\t' and not preserve:
+                                        pyautogui.typewrite('    ', interval=0)
+                                    else:
+                                        if oops_mode and char.isalpha() and random.random() < 0.03:
+                                            wrong_char = random.choice(string.ascii_lowercase)
+                                            if wrong_char == char.lower():
+                                                wrong_char = 'x' if char.lower() != 'x' else 'z'
+                                            
+                                            pyautogui.write(wrong_char)
+                                            await asyncio.sleep(random.uniform(0.1, 0.2))
+                                            pyautogui.press('backspace')
+                                            print(f"🙈 Oops! Made a typo on '{char}', fixed it.")
+                                            await asyncio.sleep(random.uniform(0.05, 0.15))
+                                            
+                                        pyautogui.write(char)
+                                except Exception as e:
+                                    await broadcast({
+                                        'type': 'error',
+                                        'message': f'Typing error at position {i}: {str(e)}'
+                                    })
+                                    return
+                                
+                                if i % 5 == 0 or i == total - 1:
+                                    await broadcast({
+                                        'type': 'progress',
+                                        'current': i + 1,
+                                        'total': total
+                                    })
+                                
+                                if delay_ms > 0 and i < total - 1:
+                                    if jitter_mode:
+                                        jittered_ms = random.gauss(delay_ms, delay_ms * 0.4)
+                                        actual_delay = max(1.0, jittered_ms) / 1000.0
+                                    else:
+                                        actual_delay = delay_ms / 1000.0
+                                        
+                                    await asyncio.sleep(actual_delay)
                         
                         # Done!
                         await broadcast({'type': 'complete'})
-                        log('✅', 'Typing complete!', Color.GREEN)
+                        log('✅', 'Typing complete!' if not paste_mode else 'Paste complete!', Color.GREEN)
                     
                     except asyncio.CancelledError:
                         log('■', 'Typing cancelled', Color.YELLOW)
@@ -494,6 +695,13 @@ def run_tests():
         log('  ✓', f'pyautogui {pyautogui.__version__}', Color.GREEN)
     except Exception as e:
         log('  ✕', f'pyautogui: {e}', Color.RED)
+        all_ok = False
+
+    try:
+        import pyperclip
+        log('  ✓', f'pyperclip {pyperclip.__version__}', Color.GREEN)
+    except Exception as e:
+        log('  ✕', f'pyperclip: {e}', Color.RED)
         all_ok = False
     
     # Test 2: ADB
