@@ -1,166 +1,120 @@
 # ⌨️ Keyboard Punch
 
-**Turn your Android phone into a USB keyboard for your laptop.**
+**Turn your Android phone into a high-speed, undetectable USB keyboard for your laptop.**
 
-Type or paste text on your phone, press "Start Punching", and watch it get typed out on your laptop — character by character, at your chosen speed (10–250 WPM).
+Type or paste text on your phone, press "Start Typing", and watch it get typed out on your laptop — character by character, with human-like variance, smart IDE indentation, and bot-evasion mechanisms.
 
 ---
 
 ## How It Works
 
 ```
-📱 Phone (Chrome)  ──USB-C──►  💻 Laptop (Python)  ──►  🖥️ Active App
-   Web App UI          ADB        Companion Script       Keystroke Sim
-                     Reverse
+📱 Phone (Chrome)  ──USB Cable──►  💻 Laptop (Go Native)  ──►  🖥️ Active App
+   Web App UI             ADB          Companion Engine          Keystroke Sim
+                        Reverse        (Zero Dependencies)
 ```
 
-1. The **companion script** runs on your laptop — it sets up ADB reverse port forwarding over USB-C
-2. You open **Chrome on your phone** → `http://localhost:8080`
-3. Type/paste text, set speed, press **"Start Punching"**
-4. Text is sent via WebSocket through the USB cable
-5. The script types it into whatever app has focus on your laptop
+1. The **native companion engine** runs on your laptop — lightweight, instant startup, zero external runtime dependencies.
+2. It configures ADB reverse port forwarding over USB.
+3. You open **Chrome on your phone** → `http://localhost:8080`.
+4. Type or paste your code/text, set your speed, and press **"Start Typing"**.
+5. Keystrokes are simulated directly into your active window (VS Code, terminal, browser, interview editor).
 
-> **No Wi-Fi needed.** All communication happens through the USB-C cable.
+> **No Wi-Fi needed.** All communication happens through the USB cable.
 
 ---
 
-## Prerequisites
+## 🚀 Quick Start (Easiest Method — No Python or Git Needed)
+
+1. **Connect your phone via USB**:
+   - Turn on **USB Debugging** on your phone (*Settings → Developer Options → USB Debugging*).
+   - If prompted on your phone, tap **"Always allow from this computer"**.
+2. **Download & Run**:
+   - Download `KeyboardPunch.exe` from the latest release.
+   - Double-click to run! (No installation or terminal required).
+3. **Open on your phone**:
+   - Open Chrome on your phone and go to:
+     ```
+     http://localhost:8080
+     ```
+4. **Start typing!**
+
+---
+
+## 🛠️ Building From Source (Developers)
+
+The companion engine is written in **Go** for native performance, zero-dependency distribution, and minimal binary size (~7 MB).
+
+### Prerequisites
 
 | Requirement | How to Get It |
 |-------------|---------------|
-| **Python 3.8+** | Usually pre-installed on macOS/Linux. For Windows, download from python.org. Check: `python3 --version` |
-| **ADB** | **Windows:** Run `winget install Google.PlatformTools` in PowerShell<br>**macOS:** Run `brew install android-platform-tools` in Terminal<br>**Linux (Ubuntu/Debian):** Run `sudo apt install adb` |
-| **USB Debugging** | On your phone: Settings → About Phone → Tap "Build Number" 7 times → Back → Developer Options → Enable "USB Debugging" |
+| **Go 1.20+** | Download from [golang.org](https://golang.org) (Only if building from source) |
+| **ADB** | **Windows:** `winget install Google.PlatformTools`<br>**macOS:** `brew install android-platform-tools`<br>**Linux:** `sudo apt install adb` |
 | **USB Cable** | A data-capable USB cable (not charge-only) |
 
----
-
-## Quick Start
-
-### 1. Connect your phone via USB-C
-
-Plug in your Android phone. If prompted on the phone, tap **"Allow USB Debugging"**.
-
-### 2. Run the companion script
+### Compile & Run
 
 ```bash
-# Option A: One-command launcher
-chmod +x companion/start.sh
-./companion/start.sh
+# 1. Clone the repository
+git clone https://github.com/aditya-s45/autocoder.git
+cd autocoder
 
-# Option B: Manual
-pip3 install -r companion/requirements.txt
-python3 companion/server.py
+# 2. Run directly
+go run main.go
+
+# 3. Or build the ultra-compact standalone binary (~7MB)
+go build -ldflags="-s -w" -o dist/KeyboardPunch.exe main.go
 ```
-
-### 3. Open the app on your phone
-
-Open **Chrome** on your phone and navigate to:
-
-```
-http://localhost:8080
-```
-
-### 4. Start punching!
-
-1. Type or paste your text in the text box
-2. Adjust typing speed (10–250 WPM)
-3. Click to the target app on your laptop (e.g., VS Code, Terminal)
-4. Press **"Start Punching"** on your phone
-5. The 3-second countdown gives you time to focus the target app
 
 ---
 
-## Features
+## ✨ Features
 
-- **⚡ Adjustable Speed** — 10 to 250 WPM with real-time preview
-- **📝 Full Formatting** — Newlines, tabs, spaces, special characters
-- **⏱️ Focus Countdown** — 3-second delay to switch to target app
-- **📊 Live Progress** — Real-time progress bar with ETA
-- **🛑 Emergency Stop** — Stop button or move mouse to screen corner
-- **📋 History** — Last 10 sent texts, tap to reuse
-- **🔌 Auto-Reconnect** — Reconnects if USB is briefly disconnected
-- **🎨 Premium Dark UI** — Glassmorphism design, smooth animations
-
----
-
-## Verify Setup
-
-Run the built-in test to check everything is configured correctly:
-
-```bash
-python3 companion/server.py --test
-```
-
-This checks:
-- ✅ Python packages installed
-- ✅ ADB found and device connected
-- ✅ App files present
-- ✅ Keyboard simulation working
+- **🚀 Ultra-Compact Native Executable (~7 MB)** — Powered by Go. No Python, no heavy runtime, instant startup in <10ms.
+- **🧠 Smart IDE Auto-Indent** — Understands code editors (VS Code, Cursor, LeetCode). Detects colons `:` and braces `{`, lets the IDE auto-indent naturally, and presses `Backspace` when dedenting.
+- **👻 Human-like Jitter Mode** — Applies a natural Gaussian distribution to typing delays to mimic real muscle memory and bypass anti-bot timing checks.
+- **🙈 Oops Mode (Typo Simulator)** — Mathematical bot-bypass. Has a 3% chance per keystroke to mistype a letter, pause, backspace, and correct it.
+- **📋 Fast Paste Mode** — Instantly transfers large codebases via the system clipboard (`Ctrl+V`).
+- **⚡ Adjustable Speed** — 10 to 500 WPM with real-time ETA calculation.
+- **⏱️ Focus Countdown** — Configurable countdown giving you time to switch focus to your target editor.
+- **📊 Multi-Device Synchronization** — Live sync between phone, tablet, and laptop browser tabs over WebSockets.
+- **🛑 Emergency Stop** — Stop button on phone or instant `Ctrl+C` in terminal.
+- **🎨 Glassmorphism Dark UI** — Ambient glow, smooth animations, and clean mobile interface.
 
 ---
 
-## macOS Permissions
-
-On macOS, you need to grant **Accessibility** permissions to your terminal app for keyboard simulation to work:
-
-1. Go to **System Settings → Privacy & Security → Accessibility**
-2. Click the **+** button
-3. Add your terminal app (Terminal, iTerm2, VS Code, etc.)
-4. Toggle it **ON**
-
----
-
-## Troubleshooting
+## 🔍 Troubleshooting
 
 ### "No Android device detected"
-- Make sure USB Debugging is enabled
-- Try a different USB-C cable (some are charge-only)
-- Run `adb devices` to verify
-- On the phone, check for a "USB Debugging" authorization popup
+- Ensure **USB Debugging** is turned ON in Developer Options.
+- Re-plug your USB cable and check your phone's notification panel: change USB mode from *"Charging only"* to *"File Transfer (MTP)"*.
+- Look at your phone screen for the **"Allow USB Debugging?"** popup and tap **Allow**.
+- Test with `adb devices` in your terminal to verify your device is listed.
 
-### "localhost:8080 not loading on phone"
-- Make sure the companion script is running
-- Check that ADB reverse is set up: `adb reverse --list`
-- Try: `adb reverse tcp:8080 tcp:8080` manually
-
-### "Typing not working / no keystrokes"
-- Grant Accessibility permissions (see macOS Permissions above)
-- Make sure the target app has focus on the laptop
-- Check pyautogui: `python3 -c "import pyautogui; pyautogui.write('test')"`
-
-### "WebSocket disconnects frequently"
-- Try a different USB port
-- Make sure the phone screen stays on during punching
-- Disable battery optimization for Chrome on the phone
+### "Site can't be reached at localhost:8080"
+- Make sure `KeyboardPunch.exe` (or `go run main.go`) is currently running.
+- Force plain HTTP instead of HTTPS (`http://localhost:8080`).
+- Ensure ADB reverse port forwarding is active: `adb reverse tcp:8080 tcp:8080`.
 
 ---
 
-## Project Structure
+## 📁 Project Structure
 
 ```
-keyboard/
-├── README.md                  ← You are here
-├── app/                       ← Phone-side web app
-│   ├── index.html            ← Main page
-│   ├── style.css             ← Dark glassmorphism theme
-│   └── app.js                ← WebSocket client + UI logic
-└── companion/                 ← Laptop-side companion
-    ├── server.py             ← Main script (ADB + WebSocket + typing)
-    ├── requirements.txt      ← Python dependencies
-    └── start.sh              ← One-command launcher
+autocoder/
+├── main.go            ← Native Go companion engine (Web server + WS + Win32 SendInput)
+├── go.mod             ← Go module definitions
+├── go.sum             ← Checksums for Go dependencies
+├── app/               ← Embedded Web UI (served directly from the binary)
+│   ├── index.html     ← Main frontend interface
+│   ├── style.css      ← Modern dark theme styling
+│   └── app.js         ← WebSocket client & mobile state manager
+└── dist/              ← Standalone pre-built executable (KeyboardPunch.exe)
 ```
 
 ---
 
-## Safety
+## 📄 License
 
-- **Mouse Failsafe**: Move your mouse to any screen corner to immediately stop all typing (pyautogui built-in safety)
-- **Stop Button**: Press the Stop button on the phone app at any time
-- **Ctrl+C**: Press Ctrl+C in the terminal to shut down everything
-
----
-
-## License
-
-MIT
+MIT License — feel free to use, modify, and contribute!

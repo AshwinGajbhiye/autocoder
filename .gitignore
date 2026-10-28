@@ -5,7 +5,15 @@ __pycache__/
 *.swp
 *.swo
 
+# Go binaries & build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+dist/
+
 # PyInstaller build artifacts
 build/
-dist/
 *.spec
