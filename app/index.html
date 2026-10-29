@@ -37,9 +37,20 @@
                 </div>
                 <h1 class="app-title">Keyboard Punch</h1>
             </div>
-            <div class="connection-badge" id="connection-badge">
-                <span class="connection-dot" id="connection-dot"></span>
-                <span class="connection-text" id="connection-text">Offline</span>
+            <div class="header-right" style="display: flex; align-items: center; gap: 10px;">
+                <button class="pair-nav-btn" id="pair-nav-btn" title="Pair Phone via QR Code" type="button">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                    </svg>
+                    <span>Pair Phone</span>
+                </button>
+                <div class="connection-badge" id="connection-badge">
+                    <span class="connection-dot" id="connection-dot"></span>
+                    <span class="connection-text" id="connection-text">Offline</span>
+                </div>
             </div>
         </header>
 
@@ -248,8 +259,23 @@
             <span class="toast-icon" id="toast-icon"></span>
             <span class="toast-message" id="toast-message"></span>
         </div>
+
+        <!-- QR Code Pairing Modal -->
+        <div class="countdown-overlay hidden" id="pair-modal" style="backdrop-filter: blur(25px);">
+            <div class="countdown-content" style="max-width: 440px; padding: 28px 24px;">
+                <h3 style="font-size: 1.3rem; margin-bottom: 6px;">📱 Pair via Wi-Fi</h3>
+                <p style="font-size: 0.85rem; color: #aaa; margin-bottom: 16px;">Scan with your phone camera (Same Wi-Fi or Hotspot):</p>
+                <div style="background: white; border-radius: 14px; padding: 12px; display: inline-block; margin-bottom: 16px;">
+                    <img id="modal-qr-img" src="/api/qr" alt="QR Code" style="width: 200px; height: 200px; display: block;">
+                </div>
+                <div style="font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: #79ffe1; background: rgba(0,0,0,0.5); padding: 8px 12px; border-radius: 8px; margin-bottom: 18px; word-break: break-all;" id="modal-qr-url">
+                    Loading...
+                </div>
+                <button class="countdown-cancel" id="close-pair-modal-btn" type="button">Close</button>
+            </div>
+        </div>
     </div>
 
-    <script src="app.js?v=4"></script>
+    <script src="app.js?v=5"></script>
 </body>
 </html>

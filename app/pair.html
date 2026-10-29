@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pair Your Phone — Keyboard Punch</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .pair-container {
+            max-width: 520px;
+            margin: 40px auto;
+            padding: 24px;
+            text-align: center;
+        }
+        .pair-card {
+            background: rgba(22, 22, 38, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border-radius: 24px;
+            padding: 32px 24px;
+            box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+            transition: border-color 0.4s ease, box-shadow 0.4s ease;
+        }
+        .pair-card.connected {
+            border-color: #00ff88;
+            box-shadow: 0 0 40px rgba(0, 255, 136, 0.25);
+        }
+        .qr-wrapper {
+            background: #ffffff;
+            border-radius: 18px;
+            padding: 16px;
+            display: inline-block;
+            margin: 20px 0;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+        }
+        .qr-wrapper img {
+            width: 240px;
+            height: 240px;
+            display: block;
+        }
+        .url-box {
+            display: flex;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
+            padding: 6px 8px 6px 14px;
+            margin: 16px 0;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.95rem;
+        }
+        .url-box span {
+            flex: 1;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: #79ffe1;
+        }
+        .url-box button {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: #fff;
+            padding: 8px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+        .url-box button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.05);
+            margin-bottom: 20px;
+        }
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ffaa00;
+            animation: pulse 1.5s infinite;
+        }
+        .status-dot.active {
+            background: #00ff88;
+            box-shadow: 0 0 10px #00ff88;
+            animation: none;
+        }
+        .guide-grid {
+            margin-top: 24px;
+            display: grid;
+            gap: 12px;
+            text-align: left;
+        }
+        .guide-item {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 12px 16px;
+            font-size: 0.85rem;
+            color: #aaa;
+        }
+        .guide-item b {
+            color: #eee;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="ambient-glow"></div>
+
+    <div class="pair-container">
+        <div class="pair-card" id="pairCard">
+            <div class="status-pill">
+                <span class="status-dot" id="statusDot"></span>
+                <span id="statusText">Waiting for phone to connect...</span>
+            </div>
+
+            <h2 style="font-size: 1.6rem; font-weight: 700; margin-bottom: 8px;">📱 Scan to Pair Phone</h2>
+            <p style="font-size: 0.9rem; color: #888; margin-bottom: 8px;">
+                Zero cables. Zero ADB setup. Connect over your Wi-Fi network!
+            </p>
+
+            <div class="qr-wrapper">
+                <img id="qrImg" src="/api/qr" alt="Scan QR Code with Phone">
+            </div>
+
+            <div class="url-box">
+                <span id="pairingUrlText">http://localhost:8080</span>
+                <button id="copyBtn" onclick="copyPairingURL()">Copy</button>
+            </div>
+
+            <div class="guide-grid">
+                <div class="guide-item">
+                    📶 <b>Method 1 (Same Wi-Fi):</b> Ensure laptop and phone are connected to the same home or office Wi-Fi, then scan with your phone's camera.
+                </div>
+                <div class="guide-item">
+                    🔥 <b>Method 2 (No Wi-Fi / Hotspot):</b> Turn on your phone's <b>Personal Hotspot</b>, connect your laptop to it, and scan!
+                </div>
+                <div class="guide-item">
+                    🔌 <b>Method 3 (USB Cable fallback):</b> If wireless isn't available, standard USB with ADB still works at <code>http://localhost:8080</code>.
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentUrl = '';
+
+        // Fetch network info and update pairing details
+        async function loadNetworkInfo() {
+            try {
+                const res = await fetch('/api/info');
+                const data = await res.json();
+                if (data.pairing_url) {
+                    currentUrl = data.pairing_url;
+                    document.getElementById('pairingUrlText').textContent = currentUrl;
+                    document.getElementById('qrImg').src = '/api/qr?url=' + encodeURIComponent(currentUrl);
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function copyPairingURL() {
+            if (!currentUrl) return;
+            navigator.clipboard.writeText(currentUrl).then(() => {
+                const btn = document.getElementById('copyBtn');
+                btn.textContent = 'Copied!';
+                setTimeout(() => btn.textContent = 'Copy', 1500);
+            });
+        }
+
+        // Connect WebSocket to detect when phone pairs
+        function monitorConnection() {
+            const ws = new WebSocket(`ws://${location.hostname || 'localhost'}:8765`);
+            ws.onmessage = (event) => {
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg.type === 'sync_state' || msg.type === 'code_updated') {
+                        // Phone or device connected!
+                        const card = document.getElementById('pairCard');
+                        const dot = document.getElementById('statusDot');
+                        const text = document.getElementById('statusText');
+
+                        card.classList.add('connected');
+                        dot.classList.add('active');
+                        text.textContent = '⚡ Connected! Phone is ready.';
+                    }
+                } catch (e) {}
+            };
+            ws.onclose = () => {
+                setTimeout(monitorConnection, 3000);
+            };
+        }
+
+        loadNetworkInfo();
+        monitorConnection();
+    </script>
+</body>
+</html>

@@ -58,6 +58,7 @@ const (
 	ID_TRAY_OPEN   = 2003
 	ID_TRAY_STOP   = 2004
 	ID_TRAY_EXIT   = 2005
+	ID_TRAY_PAIR   = 2006
 
 	WS_POPUP = 0x80000000
 )
@@ -144,6 +145,9 @@ func showContextMenu(hwnd uintptr) {
 	sep, _ := syscall.UTF16PtrFromString("")
 	procAppendMenuW.Call(hMenu, uintptr(MF_SEPARATOR), 0, uintptr(unsafe.Pointer(sep)))
 
+	pairStr, _ := syscall.UTF16PtrFromString("📱 Pair Phone (Wi-Fi QR Code)")
+	procAppendMenuW.Call(hMenu, uintptr(MF_STRING), uintptr(ID_TRAY_PAIR), uintptr(unsafe.Pointer(pairStr)))
+
 	openStr, _ := syscall.UTF16PtrFromString("🌐 Open Web UI (http://localhost:8080)")
 	procAppendMenuW.Call(hMenu, uintptr(MF_STRING), uintptr(ID_TRAY_OPEN), uintptr(unsafe.Pointer(openStr)))
 
@@ -167,6 +171,8 @@ func showContextMenu(hwnd uintptr) {
 	)
 
 	switch cmd {
+	case ID_TRAY_PAIR:
+		openBrowser(fmt.Sprintf("http://localhost:%d/pair.html", HTTP_PORT))
 	case ID_TRAY_OPEN:
 		openBrowser(fmt.Sprintf("http://localhost:%d", HTTP_PORT))
 	case ID_TRAY_STOP:

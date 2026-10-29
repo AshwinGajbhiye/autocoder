@@ -151,6 +151,33 @@ body {
     background-clip: text;
 }
 
+/* --- Pair Navigation Button --- */
+.pair-nav-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #eee;
+    padding: 5px 10px;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-normal);
+}
+
+.pair-nav-btn:hover {
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.3);
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+.pair-nav-btn svg {
+    color: #79ffe1;
+}
+
 /* --- Connection Badge --- */
 .connection-badge {
     display: flex;

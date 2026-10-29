@@ -20,6 +20,7 @@ import (
 
 	"github.com/atotto/clipboard"
 	"github.com/gorilla/websocket"
+	"github.com/skip2/go-qrcode"
 )
 
 // ─── Embedded Web Assets ─────────────────────────────────────
@@ -806,6 +807,11 @@ func main() {
 	http.Handle("/", http.FileServer(http.FS(appFS)))
 	http.HandleFunc("/ws", handleWS)
 	http.HandleFunc("/ws/", handleWS)
+	http.HandleFunc("/api/info", handleAPIInfo)
+	http.HandleFunc("/api/qr", handleAPIQR)
+	http.HandleFunc("/pair", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/pair.html", http.StatusTemporaryRedirect)
+	})
 
 	go func() {
 		addr := fmt.Sprintf("0.0.0.0:%d", HTTP_PORT)
@@ -827,9 +833,15 @@ func main() {
 	logMsg("🔗", fmt.Sprintf("WebSocket server running on port %d", WS_PORT), ColorGreen)
 
 	logHeader("🚀 Ready!")
+	pairingURL := getPrimaryPairingURL()
 	if isConsoleAttached {
-		fmt.Printf("  📱  %sOpen on your phone:  %shttp://localhost:%d%s\n", ColorCyan, ColorBold, HTTP_PORT, ColorEnd)
-		fmt.Printf("  💡  %sOpen Chrome on your phone and go to the URL above%s\n", ColorDim, ColorEnd)
+		fmt.Printf("  📱  %sWi-Fi / QR Pairing URL:  %s%s%s\n", ColorCyan, ColorBold, pairingURL, ColorEnd)
+		fmt.Printf("  🔌  %sUSB / ADB Reverse URL:   %shttp://localhost:%d%s\n", ColorDim, ColorBold, HTTP_PORT, ColorEnd)
+		fmt.Printf("  📄  %sInteractive Pairing Page: %shttp://localhost:%d/pair.html%s\n", ColorDim, ColorBold, HTTP_PORT, ColorEnd)
+		if q, err := qrcode.New(pairingURL, qrcode.Medium); err == nil {
+			fmt.Println("\n" + q.ToSmallString(false))
+		}
+		fmt.Printf("  💡  %sScan the QR code above with your phone camera (Same Wi-Fi or Hotspot)%s\n", ColorDim, ColorEnd)
 		fmt.Printf("  🛡️  %sMouse Failsafe: Slam mouse to top-left corner to abort typing%s\n", ColorDim, ColorEnd)
 		fmt.Printf("  🛑  %sPress %sCtrl+C%s to stop%s\n\n", ColorDim, ColorBold, ColorDim, ColorEnd)
 	}

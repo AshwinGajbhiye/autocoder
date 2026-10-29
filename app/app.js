@@ -63,6 +63,11 @@
         toast: $('toast'),
         toastIcon: $('toast-icon'),
         toastMessage: $('toast-message'),
+        pairNavBtn: $('pair-nav-btn'),
+        pairModal: $('pair-modal'),
+        closePairModalBtn: $('close-pair-modal-btn'),
+        modalQrImg: $('modal-qr-img'),
+        modalQrUrl: $('modal-qr-url'),
     };
 
     // ─── State ───────────────────────────────────────────────
@@ -786,6 +791,27 @@
 
         // Countdown cancel
         elements.countdownCancel.addEventListener('click', cancelCountdown);
+
+        // QR Code Pair Modal
+        if (elements.pairNavBtn && elements.pairModal) {
+            elements.pairNavBtn.addEventListener('click', async () => {
+                try {
+                    const res = await fetch('/api/info');
+                    const data = await res.json();
+                    if (data.pairing_url) {
+                        if (elements.modalQrUrl) elements.modalQrUrl.textContent = data.pairing_url;
+                        if (elements.modalQrImg) elements.modalQrImg.src = '/api/qr?url=' + encodeURIComponent(data.pairing_url);
+                    }
+                } catch (e) {}
+                elements.pairModal.classList.remove('hidden');
+            });
+        }
+
+        if (elements.closePairModalBtn && elements.pairModal) {
+            elements.closePairModalBtn.addEventListener('click', () => {
+                elements.pairModal.classList.add('hidden');
+            });
+        }
 
         // Clear history
         elements.clearHistoryBtn.addEventListener('click', () => {
