@@ -44,7 +44,39 @@ const (
 	INPUT_KEYBOARD    = 1
 	KEYEVENTF_KEYUP   = 0x0002
 	KEYEVENTF_UNICODE = 0x0004
+
+	IDI_APPLICATION = 32512
 )
+
+// ─── Windows Win32 API ───────────────────────────────────────
+
+var (
+	kernel32             = syscall.NewLazyDLL("kernel32.dll")
+	procGetModuleHandleW = kernel32.NewProc("GetModuleHandleW")
+	procAttachConsole    = kernel32.NewProc("AttachConsole")
+	procAllocConsole     = kernel32.NewProc("AllocConsole")
+
+	user32    = syscall.NewLazyDLL("user32.dll")
+	sendInput = user32.NewProc("SendInput")
+
+	shell32 = syscall.NewLazyDLL("shell32.dll")
+
+	isConsoleAttached = false
+)
+
+func initConsole() {
+	for _, arg := range os.Args[1:] {
+		if arg == "--console" || arg == "-c" {
+			// Try attaching to parent console (e.g. if run from PowerShell/cmd)
+			r, _, _ := procAttachConsole.Call(uintptr(^uintptr(0))) // ATTACH_PARENT_PROCESS = -1
+			if r == 0 {
+				procAllocConsole.Call()
+			}
+			isConsoleAttached = true
+			break
+		}
+	}
+}
 
 // ─── Windows SendInput Structures ────────────────────────────
 
@@ -64,11 +96,6 @@ type input struct {
 	_         [8]byte
 }
 
-var (
-	user32    = syscall.NewLazyDLL("user32.dll")
-	sendInput = user32.NewProc("SendInput")
-)
-
 func sendWinInput(inputs []input) {
 	if len(inputs) == 0 {
 		return
@@ -80,8 +107,9 @@ func sendWinInput(inputs []input) {
 	)
 }
 
+// pressKey presses and releases a key with realistic human dwell time (15-35ms)
 func pressKey(vk uint16) {
-	inputs := []input{
+	down := []input{
 		{
 			inputType: INPUT_KEYBOARD,
 			ki: keybdInput{
@@ -89,6 +117,13 @@ func pressKey(vk uint16) {
 				dwFlags: 0,
 			},
 		},
+	}
+	sendWinInput(down)
+
+	// Realistic human finger dwell time
+	time.Sleep(time.Duration(15+rand.Intn(20)) * time.Millisecond)
+
+	up := []input{
 		{
 			inputType: INPUT_KEYBOARD,
 			ki: keybdInput{
@@ -97,11 +132,12 @@ func pressKey(vk uint16) {
 			},
 		},
 	}
-	sendWinInput(inputs)
+	sendWinInput(up)
 }
 
+// writeRune sends a Unicode character with human-like dwell time
 func writeRune(r rune) {
-	inputs := []input{
+	down := []input{
 		{
 			inputType: INPUT_KEYBOARD,
 			ki: keybdInput{
@@ -109,6 +145,13 @@ func writeRune(r rune) {
 				dwFlags: KEYEVENTF_UNICODE,
 			},
 		},
+	}
+	sendWinInput(down)
+
+	// Realistic human finger dwell time
+	time.Sleep(time.Duration(15+rand.Intn(20)) * time.Millisecond)
+
+	up := []input{
 		{
 			inputType: INPUT_KEYBOARD,
 			ki: keybdInput{
@@ -117,7 +160,7 @@ func writeRune(r rune) {
 			},
 		},
 	}
-	sendWinInput(inputs)
+	sendWinInput(up)
 }
 
 func pasteClipboard(text string) error {
@@ -126,14 +169,18 @@ func pasteClipboard(text string) error {
 	}
 	time.Sleep(30 * time.Millisecond)
 
-	// Send Ctrl + V
-	inputs := []input{
+	// Send Ctrl + V with natural delay
+	down := []input{
 		{inputType: INPUT_KEYBOARD, ki: keybdInput{wVk: VK_CONTROL, dwFlags: 0}},
 		{inputType: INPUT_KEYBOARD, ki: keybdInput{wVk: VK_V, dwFlags: 0}},
+	}
+	sendWinInput(down)
+	time.Sleep(25 * time.Millisecond)
+	up := []input{
 		{inputType: INPUT_KEYBOARD, ki: keybdInput{wVk: VK_V, dwFlags: KEYEVENTF_KEYUP}},
 		{inputType: INPUT_KEYBOARD, ki: keybdInput{wVk: VK_CONTROL, dwFlags: KEYEVENTF_KEYUP}},
 	}
-	sendWinInput(inputs)
+	sendWinInput(up)
 	return nil
 }
 
@@ -152,14 +199,18 @@ const (
 )
 
 func logMsg(icon, message, color string) {
-	fmt.Printf("  %s  %s%s%s\n", icon, color, message, ColorEnd)
+	if isConsoleAttached {
+		fmt.Printf("  %s  %s%s%s\n", icon, color, message, ColorEnd)
+	}
 }
 
 func logHeader(title string) {
-	sep := strings.Repeat("─", 50)
-	fmt.Printf("\n%s%s%s%s\n", ColorPurple, ColorBold, sep, ColorEnd)
-	fmt.Printf("  %s%s%s%s\n", ColorPurple, ColorBold, title, ColorEnd)
-	fmt.Printf("%s%s%s%s\n\n", ColorPurple, ColorBold, sep, ColorEnd)
+	if isConsoleAttached {
+		sep := strings.Repeat("─", 50)
+		fmt.Printf("\n%s%s%s%s\n", ColorPurple, ColorBold, sep, ColorEnd)
+		fmt.Printf("  %s%s%s%s\n", ColorPurple, ColorBold, title, ColorEnd)
+		fmt.Printf("%s%s%s%s\n\n", ColorPurple, ColorBold, sep, ColorEnd)
+	}
 }
 
 // ─── ADB Management ──────────────────────────────────────────
@@ -283,6 +334,13 @@ func broadcast(v interface{}) {
 	}
 }
 
+// checkMouseFailsafe returns true if mouse cursor is slammed into the top-left corner (0,0)
+func checkMouseFailsafe() bool {
+	var pt POINT
+	procGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
+	return pt.X == 0 && pt.Y == 0
+}
+
 // ─── Typing Engine ───────────────────────────────────────────
 
 func executePunch(stopChan chan struct{}, text string, delayMs int, preserve, smartIndent, paste, jitter, oops bool) {
@@ -327,6 +385,13 @@ func executePunch(stopChan chan struct{}, text string, delayMs int, preserve, sm
 		typedChars := 0
 
 		for lineIdx, line := range lines {
+			// Check emergency stop and mouse corner failsafe
+			if checkMouseFailsafe() {
+				broadcast(map[string]interface{}{"type": "stopped"})
+				logMsg("🛡️", "Emergency stop triggered by mouse in corner!", ColorYellow)
+				return
+			}
+
 			select {
 			case <-stopChan:
 				broadcast(map[string]interface{}{"type": "stopped"})
@@ -409,6 +474,12 @@ func executePunch(stopChan chan struct{}, text string, delayMs int, preserve, sm
 
 			// Type characters in the line
 			for _, ch := range strippedLine {
+				if checkMouseFailsafe() {
+					broadcast(map[string]interface{}{"type": "stopped"})
+					logMsg("🛡️", "Emergency stop triggered by mouse in corner!", ColorYellow)
+					return
+				}
+
 				select {
 				case <-stopChan:
 					broadcast(map[string]interface{}{"type": "stopped"})
@@ -425,7 +496,9 @@ func executePunch(stopChan chan struct{}, text string, delayMs int, preserve, sm
 					writeRune(wrongRune)
 					time.Sleep(time.Duration(100+rand.Intn(100)) * time.Millisecond)
 					pressKey(VK_BACK)
-					fmt.Printf("  🙈 Oops! Made a typo on '%c', fixed it.\n", ch)
+					if isConsoleAttached {
+						fmt.Printf("  🙈 Oops! Made a typo on '%c', fixed it.\n", ch)
+					}
 					time.Sleep(time.Duration(50+rand.Intn(100)) * time.Millisecond)
 				}
 
@@ -458,6 +531,12 @@ func executePunch(stopChan chan struct{}, text string, delayMs int, preserve, sm
 
 	// ─── Fallback Raw Character-by-Character Typing ───────────
 	for i, ch := range text {
+		if checkMouseFailsafe() {
+			broadcast(map[string]interface{}{"type": "stopped"})
+			logMsg("🛡️", "Emergency stop triggered by mouse in corner!", ColorYellow)
+			return
+		}
+
 		select {
 		case <-stopChan:
 			broadcast(map[string]interface{}{"type": "stopped"})
@@ -481,7 +560,9 @@ func executePunch(stopChan chan struct{}, text string, delayMs int, preserve, sm
 				writeRune(wrongRune)
 				time.Sleep(time.Duration(100+rand.Intn(100)) * time.Millisecond)
 				pressKey(VK_BACK)
-				fmt.Printf("  🙈 Oops! Made a typo on '%c', fixed it.\n", ch)
+				if isConsoleAttached {
+					fmt.Printf("  🙈 Oops! Made a typo on '%c', fixed it.\n", ch)
+				}
 				time.Sleep(time.Duration(50+rand.Intn(100)) * time.Millisecond)
 			}
 			writeRune(ch)
@@ -685,14 +766,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 			go executePunch(stopChan, text, delayMs, preserve, smartIndent, paste, jitter, oops)
 
 		case "stop":
-			punchMutex.Lock()
-			if punchCancelFunc != nil {
-				punchCancelFunc()
-				punchCancelFunc = nil
-			}
-			punchMutex.Unlock()
-			logMsg("⏹", "Stop requested", ColorYellow)
-			broadcast(map[string]string{"type": "stopped"})
+			stopPunchingGlobally()
 		}
 	}
 
@@ -706,6 +780,7 @@ func handleWS(w http.ResponseWriter, r *http.Request) {
 // ─── Main Entry Point ────────────────────────────────────────
 
 func main() {
+	initConsole()
 	logHeader("⌨️  Keyboard Punch — Companion (Go Native)")
 
 	// 1. Check ADB
@@ -752,17 +827,27 @@ func main() {
 	logMsg("🔗", fmt.Sprintf("WebSocket server running on port %d", WS_PORT), ColorGreen)
 
 	logHeader("🚀 Ready!")
-	fmt.Printf("  📱  %sOpen on your phone:  %shttp://localhost:%d%s\n", ColorCyan, ColorBold, HTTP_PORT, ColorEnd)
-	fmt.Printf("  💡  %sOpen Chrome on your phone and go to the URL above%s\n", ColorDim, ColorEnd)
-	fmt.Printf("  🛑  %sPress %sCtrl+C%s to stop%s\n\n", ColorDim, ColorBold, ColorDim, ColorEnd)
+	if isConsoleAttached {
+		fmt.Printf("  📱  %sOpen on your phone:  %shttp://localhost:%d%s\n", ColorCyan, ColorBold, HTTP_PORT, ColorEnd)
+		fmt.Printf("  💡  %sOpen Chrome on your phone and go to the URL above%s\n", ColorDim, ColorEnd)
+		fmt.Printf("  🛡️  %sMouse Failsafe: Slam mouse to top-left corner to abort typing%s\n", ColorDim, ColorEnd)
+		fmt.Printf("  🛑  %sPress %sCtrl+C%s to stop%s\n\n", ColorDim, ColorBold, ColorDim, ColorEnd)
+	}
+
+	// Start Windows System Tray in background goroutine
+	go startSystemTray()
 
 	// Handle Graceful Shutdown
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	<-sigChan
 
-	fmt.Println()
-	logMsg("👋", "Shutting down...", ColorDim)
+	if isConsoleAttached {
+		fmt.Println()
+		logMsg("👋", "Shutting down...", ColorDim)
+	}
 	cleanupADBReverse()
-	logMsg("✅", "Goodbye!", ColorGreen)
+	if isConsoleAttached {
+		logMsg("✅", "Goodbye!", ColorGreen)
+	}
 }
