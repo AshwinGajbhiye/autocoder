@@ -38,7 +38,9 @@ const (
 	VK_BACK    = 0x08
 	VK_TAB     = 0x09
 	VK_RETURN  = 0x0D
+	VK_SHIFT   = 0x10
 	VK_CONTROL = 0x11
+	VK_MENU    = 0x12 // Alt
 	VK_V       = 0x56
 
 	// SendInput flags
@@ -57,8 +59,10 @@ var (
 	procAttachConsole    = kernel32.NewProc("AttachConsole")
 	procAllocConsole     = kernel32.NewProc("AllocConsole")
 
-	user32    = syscall.NewLazyDLL("user32.dll")
-	sendInput = user32.NewProc("SendInput")
+	user32             = syscall.NewLazyDLL("user32.dll")
+	sendInput          = user32.NewProc("SendInput")
+	procVkKeyScanW     = user32.NewProc("VkKeyScanW")
+	procMapVirtualKeyW = user32.NewProc("MapVirtualKeyW")
 
 	shell32 = syscall.NewLazyDLL("shell32.dll")
 
@@ -108,36 +112,92 @@ func sendWinInput(inputs []input) {
 	)
 }
 
-// pressKey presses and releases a key with realistic human dwell time (15-35ms)
-func pressKey(vk uint16) {
-	down := []input{
+func sendInputRaw(vk uint16, sc uint16, flags uint32) {
+	inp := []input{
 		{
 			inputType: INPUT_KEYBOARD,
 			ki: keybdInput{
 				wVk:     vk,
-				dwFlags: 0,
+				wScan:   sc,
+				dwFlags: flags,
 			},
 		},
 	}
-	sendWinInput(down)
-
-	// Realistic human finger dwell time
-	time.Sleep(time.Duration(15+rand.Intn(20)) * time.Millisecond)
-
-	up := []input{
-		{
-			inputType: INPUT_KEYBOARD,
-			ki: keybdInput{
-				wVk:     vk,
-				dwFlags: KEYEVENTF_KEYUP,
-			},
-		},
-	}
-	sendWinInput(up)
+	sendWinInput(inp)
 }
 
-// writeRune sends a Unicode character with human-like dwell time
+// pressKey presses and releases a key with physical hardware scancodes and dwell time (15-35ms)
+func pressKey(vk uint16) {
+	scan, _, _ := procMapVirtualKeyW.Call(uintptr(vk), 0)
+	sc := uint16(scan)
+
+	sendInputRaw(vk, sc, 0)
+	time.Sleep(time.Duration(15+rand.Intn(20)) * time.Millisecond)
+	sendInputRaw(vk, sc, KEYEVENTF_KEYUP)
+}
+
+// writeRune sends a physical hardware keystroke (Virtual Key + Hardware Scancode + Shift)
+// This ensures 100% compatibility with remote desktop software (Getscreen, AnyDesk, RDP)
+// and canvas-based web apps (Google Docs). Falls back to Unicode only for exotic symbols/emojis.
 func writeRune(r rune) {
+	vks, _, _ := procVkKeyScanW.Call(uintptr(r))
+	if int16(vks) == -1 {
+		// Non-keyboard symbol or emoji: use Unicode packet
+		sendUnicodeRune(r)
+		return
+	}
+
+	vk := uint16(vks & 0xFF)
+	shiftState := uint16((vks >> 8) & 0xFF)
+	needsShift := (shiftState & 0x01) != 0
+	needsCtrl := (shiftState & 0x02) != 0
+	needsAlt := (shiftState & 0x04) != 0
+
+	scan, _, _ := procMapVirtualKeyW.Call(uintptr(vk), 0)
+	sc := uint16(scan)
+
+	// Hold modifier keys down
+	if needsShift {
+		shiftScan, _, _ := procMapVirtualKeyW.Call(uintptr(VK_SHIFT), 0)
+		sendInputRaw(VK_SHIFT, uint16(shiftScan), 0)
+		time.Sleep(time.Duration(8+rand.Intn(10)) * time.Millisecond)
+	}
+	if needsCtrl {
+		ctrlScan, _, _ := procMapVirtualKeyW.Call(uintptr(VK_CONTROL), 0)
+		sendInputRaw(VK_CONTROL, uint16(ctrlScan), 0)
+		time.Sleep(time.Duration(8+rand.Intn(10)) * time.Millisecond)
+	}
+	if needsAlt {
+		altScan, _, _ := procMapVirtualKeyW.Call(uintptr(VK_MENU), 0)
+		sendInputRaw(VK_MENU, uint16(altScan), 0)
+		time.Sleep(time.Duration(8+rand.Intn(10)) * time.Millisecond)
+	}
+
+	// Press key down
+	sendInputRaw(vk, sc, 0)
+
+	// Realistic human finger dwell time (15-35ms)
+	time.Sleep(time.Duration(15+rand.Intn(20)) * time.Millisecond)
+
+	// Release key up
+	sendInputRaw(vk, sc, KEYEVENTF_KEYUP)
+
+	// Release modifiers in reverse order
+	if needsAlt {
+		altScan, _, _ := procMapVirtualKeyW.Call(uintptr(VK_MENU), 0)
+		sendInputRaw(VK_MENU, uint16(altScan), KEYEVENTF_KEYUP)
+	}
+	if needsCtrl {
+		ctrlScan, _, _ := procMapVirtualKeyW.Call(uintptr(VK_CONTROL), 0)
+		sendInputRaw(VK_CONTROL, uint16(ctrlScan), KEYEVENTF_KEYUP)
+	}
+	if needsShift {
+		shiftScan, _, _ := procMapVirtualKeyW.Call(uintptr(VK_SHIFT), 0)
+		sendInputRaw(VK_SHIFT, uint16(shiftScan), KEYEVENTF_KEYUP)
+	}
+}
+
+func sendUnicodeRune(r rune) {
 	down := []input{
 		{
 			inputType: INPUT_KEYBOARD,
@@ -149,7 +209,6 @@ func writeRune(r rune) {
 	}
 	sendWinInput(down)
 
-	// Realistic human finger dwell time
 	time.Sleep(time.Duration(15+rand.Intn(20)) * time.Millisecond)
 
 	up := []input{
@@ -170,16 +229,19 @@ func pasteClipboard(text string) error {
 	}
 	time.Sleep(30 * time.Millisecond)
 
-	// Send Ctrl + V with natural delay
+	ctrlScan, _, _ := procMapVirtualKeyW.Call(uintptr(VK_CONTROL), 0)
+	vScan, _, _ := procMapVirtualKeyW.Call(uintptr(VK_V), 0)
+
+	// Send Ctrl + V with natural delay and hardware scancodes
 	down := []input{
-		{inputType: INPUT_KEYBOARD, ki: keybdInput{wVk: VK_CONTROL, dwFlags: 0}},
-		{inputType: INPUT_KEYBOARD, ki: keybdInput{wVk: VK_V, dwFlags: 0}},
+		{inputType: INPUT_KEYBOARD, ki: keybdInput{wVk: VK_CONTROL, wScan: uint16(ctrlScan), dwFlags: 0}},
+		{inputType: INPUT_KEYBOARD, ki: keybdInput{wVk: VK_V, wScan: uint16(vScan), dwFlags: 0}},
 	}
 	sendWinInput(down)
 	time.Sleep(25 * time.Millisecond)
 	up := []input{
-		{inputType: INPUT_KEYBOARD, ki: keybdInput{wVk: VK_V, dwFlags: KEYEVENTF_KEYUP}},
-		{inputType: INPUT_KEYBOARD, ki: keybdInput{wVk: VK_CONTROL, dwFlags: KEYEVENTF_KEYUP}},
+		{inputType: INPUT_KEYBOARD, ki: keybdInput{wVk: VK_V, wScan: uint16(vScan), dwFlags: KEYEVENTF_KEYUP}},
+		{inputType: INPUT_KEYBOARD, ki: keybdInput{wVk: VK_CONTROL, wScan: uint16(ctrlScan), dwFlags: KEYEVENTF_KEYUP}},
 	}
 	sendWinInput(up)
 	return nil
