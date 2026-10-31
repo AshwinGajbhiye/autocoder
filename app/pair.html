@@ -185,7 +185,10 @@
 
         // Connect WebSocket to detect when phone pairs
         function monitorConnection() {
-            const ws = new WebSocket(`ws://${location.hostname || 'localhost'}:8765`);
+            const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const defaultHost = 'localhost:8080';
+            const currentHost = (location.host && location.host !== '') ? location.host : defaultHost;
+            const ws = new WebSocket(`${wsProtocol}//${currentHost}/ws`);
             ws.onmessage = (event) => {
                 try {
                     const msg = JSON.parse(event.data);

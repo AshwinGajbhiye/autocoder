@@ -94,11 +94,12 @@ func handleAPIInfo(w http.ResponseWriter, r *http.Request) {
 	pairingURL := getPrimaryPairingURL()
 
 	resp := map[string]interface{}{
-		"ips":         ips,
-		"http_port":   HTTP_PORT,
-		"ws_port":     WS_PORT,
-		"pairing_url": pairingURL,
-		"primary_ip":  ips[0],
+		"ips":            ips,
+		"http_port":      HTTP_PORT,
+		"ws_port":        HTTP_PORT, // WebSockets served on primary HTTP port at /ws
+		"legacy_ws_port": WS_PORT,
+		"pairing_url":    pairingURL,
+		"primary_ip":     ips[0],
 	}
 	_ = json.NewEncoder(w).Encode(resp)
 }

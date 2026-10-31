@@ -243,22 +243,17 @@ func checkADB() (bool, string) {
 
 func setupADBReverse() bool {
 	logMsg("🔌", "Setting up ADB reverse port forwarding...", ColorCyan)
-	ports := []struct {
-		port int
-		name string
-	}{
-		{WS_PORT, "WebSocket"},
-		{HTTP_PORT, "HTTP"},
-	}
 
-	for _, p := range ports {
-		cmd := exec.Command("adb", "reverse", fmt.Sprintf("tcp:%d", p.port), fmt.Sprintf("tcp:%d", p.port))
-		if err := cmd.Run(); err != nil {
-			logMsg("✕", fmt.Sprintf("%s port %d forward failed", p.name, p.port), ColorRed)
-			return false
-		}
-		logMsg("✓", fmt.Sprintf("%s port %d forwarded", p.name, p.port), ColorGreen)
+	// Primary port 8080 carries both HTTP and WebSockets (/ws)
+	cmd := exec.Command("adb", "reverse", fmt.Sprintf("tcp:%d", HTTP_PORT), fmt.Sprintf("tcp:%d", HTTP_PORT))
+	if err := cmd.Run(); err != nil {
+		logMsg("✕", fmt.Sprintf("HTTP/WS port %d reverse forward failed", HTTP_PORT), ColorRed)
+		return false
 	}
+	logMsg("✓", fmt.Sprintf("HTTP/WS port %d forwarded", HTTP_PORT), ColorGreen)
+
+	// Best-effort reverse forward for legacy port 8765
+	_ = exec.Command("adb", "reverse", fmt.Sprintf("tcp:%d", WS_PORT), fmt.Sprintf("tcp:%d", WS_PORT)).Run()
 	return true
 }
 
@@ -826,11 +821,8 @@ func main() {
 	wsMux.HandleFunc("/", handleWS)
 	go func() {
 		addr := fmt.Sprintf("0.0.0.0:%d", WS_PORT)
-		if err := http.ListenAndServe(addr, wsMux); err != nil {
-			fmt.Printf("WebSocket server error: %v\n", err)
-		}
+		_ = http.ListenAndServe(addr, wsMux)
 	}()
-	logMsg("🔗", fmt.Sprintf("WebSocket server running on port %d", WS_PORT), ColorGreen)
 
 	logHeader("🚀 Ready!")
 	pairingURL := getPrimaryPairingURL()

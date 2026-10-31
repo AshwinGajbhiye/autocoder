@@ -10,11 +10,26 @@
     'use strict';
 
     // ─── Constants ───────────────────────────────────────────
-    const WS_URL = `ws://${location.hostname || 'localhost'}:8765`;
-    const RECONNECT_INTERVAL = 3000;
+    const RECONNECT_INTERVAL = 2500;
     const MAX_HISTORY = 10;
     const HISTORY_KEY = 'keyboard_punch_history';
     const SETTINGS_KEY = 'keyboard_punch_settings';
+
+    function getWsEndpoints() {
+        const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const defaultHost = 'localhost:8080';
+        const currentHost = (location.host && location.host !== '') ? location.host : defaultHost;
+        const hostOnly = location.hostname || 'localhost';
+
+        return [
+            `${wsProtocol}//${currentHost}/ws`,
+            `${wsProtocol}//${hostOnly}:8080/ws`,
+            `${wsProtocol}//${hostOnly}:8765/ws`,
+            `${wsProtocol}//${hostOnly}:8765`,
+        ];
+    }
+
+    let wsEndpointIndex = 0;
 
     // ─── DOM Elements ────────────────────────────────────────
     const $ = (id) => document.getElementById(id);
@@ -269,9 +284,13 @@
             return;
         }
 
+        const endpoints = getWsEndpoints();
+        const url = endpoints[wsEndpointIndex % endpoints.length];
+
         try {
-            ws = new WebSocket(WS_URL);
+            ws = new WebSocket(url);
         } catch (e) {
+            wsEndpointIndex++;
             scheduleReconnect();
             return;
         }
@@ -289,11 +308,12 @@
             if (isPunching) {
                 stopPunching('Connection lost');
             }
+            wsEndpointIndex++;
             scheduleReconnect();
         };
 
         ws.onerror = () => {
-            // onclose will trigger next
+            // onclose will trigger next and rotate endpoint
         };
 
         ws.onmessage = (event) => {
