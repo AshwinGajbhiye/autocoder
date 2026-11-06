@@ -99,7 +99,7 @@
     function getSpeed() {
         const val = parseInt(elements.speedInput.value, 10);
         if (isNaN(val) || val < 10) return 10;
-        if (val > 500) return 500;
+        if (val > 1000) return 1000;
         return val;
     }
 
@@ -322,7 +322,7 @@
                 break;
 
             case 'code_updated':
-                // Received an update from another connected device (Mac or Phone)
+                // Received an update from another connected device (Laptop or Phone)
                 if (msg.text !== undefined) {
                     elements.textInput.value = msg.text;
                     updateCharCount();
@@ -552,7 +552,8 @@
         else if (wpm <= 60) label = 'Moderate';
         else if (wpm <= 120) label = 'Fast';
         else if (wpm <= 180) label = 'Very Fast';
-        else label = 'Blazing';
+        else if (wpm <= 500) label = 'Blazing';
+        else label = 'Ultra Fast';
 
         elements.speedTag.textContent = `${wpm} WPM · ${label}`;
 
@@ -650,12 +651,12 @@
         });
 
         elements.speedMinus.addEventListener('click', () => {
-            elements.speedInput.value = Math.max(10, getSpeed() - 5);
+            elements.speedInput.value = Math.max(10, getSpeed() - 10);
             updateSpeedDisplay();
         });
 
         elements.speedPlus.addEventListener('click', () => {
-            elements.speedInput.value = Math.min(500, getSpeed() + 5);
+            elements.speedInput.value = Math.min(1000, getSpeed() + 10);
             updateSpeedDisplay();
         });
 
